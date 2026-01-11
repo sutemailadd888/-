@@ -39,8 +39,12 @@ export default function Home() {
     });
   };
 
+  // ★修正: 確実にログアウト処理を行う
   const handleLogout = async () => {
+    if (!confirm('ログアウトしますか？')) return;
     await supabase.auth.signOut();
+    setSession(null);
+    window.location.reload(); 
   };
 
   if (!session) {
@@ -111,10 +115,10 @@ export default function Home() {
                   </div>
                </div>
                
-               {/* ★追加: スマホ用ログアウトボタン (PCでは消える) */}
+               {/* ★修正: relativeとz-50を追加して最前面へ */}
                <button 
                  onClick={handleLogout} 
-                 className="md:hidden flex flex-col items-center text-gray-400 hover:text-red-500 p-2"
+                 className="md:hidden flex flex-col items-center text-gray-400 hover:text-red-500 p-2 relative z-50 cursor-pointer"
                >
                  <LogOut size={20}/>
                  <span className="text-[10px] mt-1">Exit</span>
