@@ -1,10 +1,11 @@
 // app/page.tsx
-'use client'; // これでブラウザ側で動くようになります
+'use client';
 
 import React, { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js'; // Supabaseを使う準備
+import { createClient } from '@supabase/supabase-js';
 import { Menu, Plus, Clock, Users, Calendar, LogOut } from 'lucide-react';
 import MeetingCard from './components/MeetingCard';
+import RuleList from './components/RuleList'; // ★追加済み
 
 // --- Supabaseの初期化 ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -34,8 +35,8 @@ export default function Home() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/`, // ログイン後の戻り先
-        scopes: 'https://www.googleapis.com/auth/calendar', // カレンダーへのアクセス権を要求！
+        redirectTo: `${window.location.origin}/`,
+        scopes: 'https://www.googleapis.com/auth/calendar',
       },
     });
   };
@@ -64,7 +65,7 @@ export default function Home() {
     );
   }
 
-  // --- ログイン後の画面 (さっきと同じダッシュボード) ---
+  // --- ログイン後の画面 ---
   return (
     <div className="flex h-screen bg-white text-gray-800 font-sans">
       {/* 左サイドバー */}
@@ -84,7 +85,6 @@ export default function Home() {
 
         <div className="p-4 border-t border-gray-200">
           <div className="flex items-center space-x-3 mb-3">
-             {/* ユーザーのGoogleアイコンを表示 */}
             <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-gray-200"/>
             <div className="text-xs truncate w-32">
                 <div className="font-semibold text-gray-700">{session.user.user_metadata.full_name}</div>
@@ -99,7 +99,7 @@ export default function Home() {
       </aside>
 
       {/* メインキャンバス */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pb-20">
         <div className="h-48 bg-gradient-to-r from-blue-100 to-purple-100 relative group">
           <button className="absolute bottom-4 right-4 bg-white/80 px-3 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition">カバー画像を変更</button>
         </div>
@@ -121,7 +121,12 @@ export default function Home() {
               Google連携が完了しました！ここから日程調整を開始できます。
             </p>
 
+            {/* AI手動調整カード */}
             <MeetingCard session={session} />
+            
+            {/* ★自動調整ルールリスト★ */}
+            <RuleList session={session} />
+            
           </div>
         </div>
       </main>
