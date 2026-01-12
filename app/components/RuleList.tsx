@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { CalendarClock, Plus, Loader2, Play, Check, Users, BellRing, Trash2, Pencil, X, Save } from 'lucide-react';
+import { CalendarClock, Plus, Loader2, Play, Check, Users, BellRing, Trash2, Pencil, Save, X } from 'lucide-react';
 
 interface Props {
   session: any;
@@ -26,7 +26,6 @@ export default function RuleList({ session }: Props) {
   const [editPrompt, setEditPrompt] = useState('');
   const [editAttendees, setEditAttendees] = useState('');
 
-  // 実行状態
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<any>({});
 
@@ -36,7 +35,11 @@ export default function RuleList({ session }: Props) {
     fetchRules();
   }, [session]);
 
-  const getToken = () => session?.access_token || session?.provider_token;
+  // ★修正: トークン取得を確実にする
+  const getToken = () => {
+    // 優先順位: Supabaseのアクセストークン > Googleのプロバイダートークン
+    return session?.access_token || session?.provider_token;
+  };
 
   const fetchRules = async () => {
     const token = getToken();
@@ -52,23 +55,53 @@ export default function RuleList({ session }: Props) {
 
   const handleAddRule = async () => {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+        alert("認証トークンが見つかりません。一度ログアウトして再ログインしてください。");
+        return;
+    }
+    
+    // ★追加: 入力チェック
+    if (!newDay) {
+        alert("「リマインド日」を入力してください");
+        return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch('/api/rules', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+        },
         body: JSON.stringify({
-          title: newTitle, targetDay: parseInt(newDay), prompt: newPrompt, attendees: newAttendees
+          title: newTitle,
+          targetDay: parseInt(newDay), // 数値に変換
+          prompt: newPrompt,
+          attendees: newAttendees
         }),
       });
-      if (res.ok) {
-        setIsAdding(false); setNewTitle(''); setNewAttendees(''); fetchRules();
+
+      // ★追加: エラーハンドリング
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "保存に失敗しました");
       }
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+      
+      // 成功時
+      setIsAdding(false);
+      setNewTitle('');
+      setNewAttendees('');
+      fetchRules();
+
+    } catch (e: any) {
+      console.error(e);
+      alert(`エラーが発生しました: ${e.message}`);
+    } finally {
+        setLoading(false);
+    }
   };
 
-  // ★削除機能
   const handleDelete = async (id: string) => {
     if (!confirm('このルールを削除してもよろしいですか？')) return;
     const token = getToken();
@@ -79,7 +112,6 @@ export default function RuleList({ session }: Props) {
     fetchRules();
   };
 
-  // ★編集モード開始
   const startEdit = (rule: any) => {
       setEditingId(rule.id);
       setEditTitle(rule.title);
@@ -88,27 +120,37 @@ export default function RuleList({ session }: Props) {
       setEditAttendees(rule.attendees || '');
   };
 
-  // ★更新実行
   const handleUpdate = async () => {
     const token = getToken();
-    await fetch('/api/rules', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-            id: editingId,
-            title: editTitle,
-            targetDay: parseInt(editDay),
-            prompt: editPrompt,
-            attendees: editAttendees
-        }),
-    });
-    setEditingId(null);
-    fetchRules();
+    try {
+        const res = await fetch('/api/rules', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+                id: editingId,
+                title: editTitle,
+                targetDay: parseInt(editDay),
+                prompt: editPrompt,
+                attendees: editAttendees
+            }),
+        });
+
+        if (!res.ok) throw new Error("更新に失敗しました");
+
+        setEditingId(null);
+        fetchRules();
+    } catch(e: any) {
+        alert(e.message);
+    }
   };
 
   const runRule = async (rule: any) => {
     const token = session?.provider_token;
-    if (!token) { alert("カレンダー連携のトークンがありません。再ログインしてください。"); return; }
+    if (!token) {
+        alert("カレンダー連携のトークンがありません。再ログインしてください。");
+        return;
+    }
+
     setRunningRuleId(rule.id);
     setSuggestions({ ...suggestions, [rule.id]: null });
     
@@ -122,7 +164,10 @@ export default function RuleList({ session }: Props) {
         
         const today = new Date();
         let targetMonth = today.getMonth();
-        if (today.getDate() >= 20) targetMonth = targetMonth + 1;
+        if (today.getDate() >= 20) {
+            targetMonth = targetMonth + 1;
+        }
+
         const targetDate = new Date(today.getFullYear(), targetMonth, 1);
         const dateString = `${targetDate.getFullYear()}年${targetDate.getMonth() + 1}月`;
         const aiPrompt = `【自動実行モード】会議名: ${rule.title}。ターゲット時期: ${dateString}。詳細条件: ${rule.prompt_custom}。`;
@@ -133,21 +178,44 @@ export default function RuleList({ session }: Props) {
             body: JSON.stringify({ events: calData.items, userPrompt: aiPrompt }),
         });
         const aiData = await aiRes.json();
-        if (aiData.suggestions) setSuggestions({ ...suggestions, [rule.id]: aiData.suggestions });
-    } catch (error) { console.error(error); alert("実行エラー"); } finally { setRunningRuleId(null); }
+        
+        if (aiData.suggestions) {
+            setSuggestions({ ...suggestions, [rule.id]: aiData.suggestions });
+        } else {
+            alert("AIからの応答がありませんでした。");
+        }
+
+    } catch (error) {
+        console.error(error);
+        alert("実行中にエラーが発生しました");
+    } finally {
+        setRunningRuleId(null);
+    }
   };
 
   const confirmEvent = async (suggestion: any, attendees: string) => {
       if(!confirm(`${suggestion.date} ${suggestion.time} で確定し、招待を送りますか？`)) return;
+      
       try {
         const res = await fetch('/api/calendar/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session, eventDetails: suggestion, attendees }),
+            body: JSON.stringify({
+                session: session,
+                eventDetails: suggestion,
+                attendees: attendees
+            }),
         });
         const data = await res.json();
-        if (data.success) { alert("🎉 予定を作成し、招待状を送りました！"); setSuggestions({}); }
-      } catch (e) { alert("作成失敗"); }
+        if (data.success) {
+            alert("🎉 予定を作成し、招待状を送りました！");
+            setSuggestions({});
+        } else {
+            alert("作成に失敗しました: " + data.error);
+        }
+      } catch (e) {
+          alert("作成失敗");
+      }
   };
 
   return (
@@ -175,7 +243,6 @@ export default function RuleList({ session }: Props) {
                       <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full text-sm border border-gray-300 rounded p-2"/>
                   </div>
                   <div>
-                      {/* ラベル修正 */}
                       <label className="text-xs font-bold text-purple-600 block mb-1">毎月の実行リマインド日</label>
                       <input type="number" value={newDay} onChange={e => setNewDay(e.target.value)} className="w-full text-sm border border-purple-300 bg-purple-50 rounded p-2 font-bold"/>
                   </div>
@@ -202,7 +269,7 @@ export default function RuleList({ session }: Props) {
 
           {rules.map((rule) => {
               const isDueToday = todayDate === rule.target_day;
-              // 編集中のカードかどうか
+              
               if (editingId === rule.id) {
                   return (
                     <div key={rule.id} className="bg-white p-4 rounded-lg border-2 border-purple-400 shadow-md">
@@ -221,7 +288,6 @@ export default function RuleList({ session }: Props) {
                   );
               }
 
-              // 通常表示
               return (
                 <div key={rule.id} className={`rounded-lg border overflow-hidden shadow-sm transition ${isDueToday ? 'border-yellow-400 bg-yellow-50 ring-2 ring-yellow-200' : 'border-gray-200 bg-white'}`}>
                     <div className="p-4 flex items-center justify-between">
@@ -245,11 +311,9 @@ export default function RuleList({ session }: Props) {
                         </div>
                         
                         <div className="flex items-center gap-2">
-                            {/* 編集・削除ボタン */}
                             <button onClick={() => startEdit(rule)} className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-gray-100 rounded transition"><Pencil size={16}/></button>
                             <button onClick={() => handleDelete(rule.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 size={16}/></button>
                             
-                            {/* 実行ボタン */}
                             <button 
                                 onClick={() => runRule(rule)}
                                 disabled={runningRuleId === rule.id}
@@ -260,7 +324,7 @@ export default function RuleList({ session }: Props) {
                             </button>
                         </div>
                     </div>
-                    {/* (以下、提案リスト表示部分はそのまま) */}
+                    
                     {suggestions[rule.id] && (
                         <div className="p-4 bg-white border-t border-purple-100 animation-fade-in">
                             <div className="text-xs font-bold text-purple-800 mb-2">⚡️ AIが見つけた候補:</div>
