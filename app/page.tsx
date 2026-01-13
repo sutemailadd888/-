@@ -3,11 +3,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase } from 'lucide-react';
+import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase, ExternalLink } from 'lucide-react'; // ExternalLinkを追加
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
-// ★追加
 import CalendarView from './components/CalendarView';
+import TokenSyncer from './components/TokenSyncer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -158,15 +158,36 @@ export default function Home() {
                         Google連携完了。ここから日程調整を開始できます。
                     </p>
                     
-                    {/* ★ここに追加しました */}
                     <CalendarView session={session} />
                     
                     <div className="grid md:grid-cols-2 gap-6">
                       <MeetingCard session={session} />
-                      {/* レイアウト調整のため、カード系を横並びにしてもいいかもしれません */}
                     </div>
                     
+                    <TokenSyncer session={session} />
+
                     <RuleList session={session} />
+
+                    {/* ★ここに追加しました：予約ページへのリンクボタン */}
+                    <div className="mt-12 bg-purple-50 p-6 rounded-xl border border-purple-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div>
+                            <h3 className="font-bold text-purple-900 text-base flex items-center gap-2">
+                                <ExternalLink size={18}/> あなたの公開予約ページ
+                            </h3>
+                            <p className="text-sm text-purple-700 mt-1 opacity-80">
+                                このURLを社外の人に送ると、面談の予約リクエストを受け付けられます。<br/>
+                                (まだ空き状況とは連動していません)
+                            </p>
+                        </div>
+                        <a 
+                            href={`/book/${session.user.id}`} 
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full md:w-auto text-center bg-purple-600 text-white text-sm font-bold px-6 py-3 rounded-full hover:bg-purple-700 transition shadow-sm hover:shadow-md"
+                        >
+                            ページを開く
+                        </a>
+                    </div>
                 </div>
             ) : (
                 <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 animation-fade-in">
