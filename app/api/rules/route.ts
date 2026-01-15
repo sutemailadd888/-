@@ -1,26 +1,45 @@
+// app/api/rules/route.ts
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+
+// 共通: Supabaseクライアントを作成する関数
+// (トークンがある場合は、そのユーザーとして振る舞うように設定します)
+const createSupabaseClient = (token?: string) => {
+  const options: any = {};
+  if (token) {
+    options.global = {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  }
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    options
+  );
+};
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const orgId = searchParams.get('orgId');
 
+  // ヘッダーからトークンを取得
   const authHeader = request.headers.get('Authorization');
   if (!authHeader) return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
   const token = authHeader.replace('Bearer ', '');
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  // ★修正: トークンを渡してクライアント作成
+  const supabase = createSupabaseClient(token);
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  // ユーザー確認
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   let query = supabase
     .from('meeting_rules')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', user.id) // 念のため自分のデータに絞る
     .order('created_at', { ascending: false });
 
   if (orgId) {
@@ -39,12 +58,11 @@ export async function POST(request: Request) {
   if (!authHeader) return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
   const token = authHeader.replace('Bearer ', '');
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  // ★修正: トークンを渡してクライアント作成
+  // これで insert 時も「このユーザー」としてDBにアクセスします
+  const supabase = createSupabaseClient(token);
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
@@ -59,8 +77,7 @@ export async function POST(request: Request) {
       {
         user_id: user.id,
         organization_id: body.organization_id,
-        title: body.title, 
-        // rule_type: 'monthly_date',  <-- ★削除しました（これがエラーの原因でした）
+        title: body.title,
         target_day: body.targetDay,
         prompt_custom: body.prompt,
         attendees: body.attendees,
@@ -80,17 +97,15 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
+  
   const authHeader = request.headers.get('Authorization');
   const token = authHeader?.replace('Bearer ', '');
-
   if (!id || !token) return NextResponse.json({ error: 'Missing params' }, { status: 400 });
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  // ★修正: トークンを渡してクライアント作成
+  const supabase = createSupabaseClient(token);
 
-  const { data: { user } } = await supabase.auth.getUser(token);
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { error } = await supabase
@@ -107,11 +122,10 @@ export async function PUT(request: Request) {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
     
-    const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    const { data: { user } } = await supabase.auth.getUser(token!);
+    // ★修正: トークンを渡してクライアント作成
+    const supabase = createSupabaseClient(token);
+
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await request.json();
