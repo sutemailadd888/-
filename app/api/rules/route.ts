@@ -1,12 +1,10 @@
-// app/api/rules/route.ts
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const orgId = searchParams.get('orgId'); // ★URLから組織IDを受け取る
+  const orgId = searchParams.get('orgId');
 
-  // セキュリティ: ヘッダーからトークンを取得してユーザー特定
   const authHeader = request.headers.get('Authorization');
   if (!authHeader) return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
   const token = authHeader.replace('Bearer ', '');
@@ -16,7 +14,6 @@ export async function GET(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // ユーザー確認
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -26,7 +23,6 @@ export async function GET(request: Request) {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
-  // ★重要: orgIdがある場合は、その組織のルールだけを返す
   if (orgId) {
     query = query.eq('organization_id', orgId);
   }
@@ -53,7 +49,6 @@ export async function POST(request: Request) {
 
   const body = await request.json();
 
-  // ★重要: organization_id が必須
   if (!body.organization_id) {
     return NextResponse.json({ error: 'Organization ID is required' }, { status: 400 });
   }
@@ -63,9 +58,9 @@ export async function POST(request: Request) {
     .insert([
       {
         user_id: user.id,
-        organization_id: body.organization_id, // ★ここを受け取って保存！
-        rule_name: body.title, // カラム名のマッピングに注意
-        rule_type: 'monthly_date', // 一旦固定
+        organization_id: body.organization_id,
+        title: body.title, // ★ここを修正しました (rule_name -> title)
+        rule_type: 'monthly_date',
         target_day: body.targetDay,
         prompt_custom: body.prompt,
         attendees: body.attendees,
@@ -102,7 +97,7 @@ export async function DELETE(request: Request) {
     .from('meeting_rules')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id); // 他人のルールを消さないように
+    .eq('user_id', user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
@@ -125,7 +120,7 @@ export async function PUT(request: Request) {
     const { error } = await supabase
         .from('meeting_rules')
         .update({
-            rule_name: body.title,
+            title: body.title, // ★ここも修正 (rule_name -> title)
             target_day: body.targetDay,
             prompt_custom: body.prompt,
             attendees: body.attendees
