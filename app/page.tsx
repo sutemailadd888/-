@@ -1,41 +1,54 @@
+// app/page.tsx (Classic Layout)
 'use client';
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Users, Calendar, LogOut, Briefcase, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Users, LogOut, ExternalLink, Bot, Calendar as CalendarIcon, Settings } from 'lucide-react';
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
 import TokenSyncer from './components/TokenSyncer';
 import RequestInbox from './components/RequestInbox';
 import ScheduleSettings from './components/ScheduleSettings';
-import WorkspaceSwitcher from './components/WorkspaceSwitcher';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  
-  // 現在選択中のワークスペース
   const [currentOrg, setCurrentOrg] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'meeting' | 'recruitment'>('meeting');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (session) fetchPrimaryOrg(session.user.id);
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session) fetchPrimaryOrg(session.user.id);
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // 自動的に「あなたのメインのワークスペース」を読み込みます
+  const fetchPrimaryOrg = async (userId: string) => {
+    const { data: members } = await supabase
+        .from('organization_members')
+        .select(`organization_id, organizations ( id, name )`)
+        .eq('user_id', userId);
+    
+    // 見つかった最初の組織を自動セット（これで画面が真っ白になりません）
+    if (members && members.length > 0) {
+        setCurrentOrg(members[0].organizations);
+    }
+  };
 
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
@@ -72,152 +85,103 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen bg-white text-gray-800 font-sans overflow-hidden">
-      
-      {/* 1. 左端: ワークスペース切替 */}
-      <WorkspaceSwitcher 
-        session={session} 
-        currentOrgId={currentOrg?.id} 
-        onSwitch={(org) => setCurrentOrg(org)} 
-      />
-
-      {/* 2. 左: メニューサイドバー */}
-      <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col hidden md:flex">
-        <div className="p-4 border-b border-gray-200 h-16 flex items-center">
-            {currentOrg ? (
-                <div className="font-bold text-gray-800 truncate" title={currentOrg.name}>
-                    {currentOrg.name}
+    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
+      {/* シンプルヘッダー */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+            <h1 className="text-xl font-bold text-gray-800">GAKU-HUB OS</h1>
+            <div className="flex items-center gap-4">
+                <div className="text-xs text-right hidden sm:block">
+                    <div className="font-bold">{session.user.user_metadata.full_name}</div>
+                    <div className="text-gray-400">{currentOrg ? currentOrg.name : 'Loading...'}</div>
                 </div>
-            ) : (
-                <div className="text-gray-400 text-sm animate-pulse">Loading...</div>
-            )}
-        </div>
-        
-        <div className="flex-1 overflow-y-auto py-2">
-          <div className="px-4 py-1 text-xs text-gray-500 font-semibold mt-4">Apps</div>
-          <nav className="space-y-1 px-2">
-            <SidebarItem 
-                icon={<Calendar size={18} />} 
-                label="日程調整 & カレンダー" 
-                active={activeTab === 'meeting'} 
-                onClick={() => setActiveTab('meeting')}
-            />
-            <SidebarItem 
-                icon={<Briefcase size={18} />} 
-                label="採用面談リスト" 
-                active={activeTab === 'recruitment'} 
-                onClick={() => setActiveTab('recruitment')}
-            />
-          </nav>
-        </div>
-
-        <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center space-x-3 mb-3">
-            <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-gray-200" alt="avatar"/>
-            <div className="text-xs truncate w-32">
-                <div className="font-semibold text-gray-700">{session.user.user_metadata.full_name}</div>
-                <div className="text-gray-400">Online</div>
+                <button onClick={handleLogout} className="text-gray-400 hover:text-red-600 p-2">
+                    <LogOut size={20}/>
+                </button>
             </div>
-          </div>
-          <button onClick={handleLogout} className="flex items-center space-x-2 text-xs text-gray-500 hover:text-red-600 w-full px-1">
-            <LogOut size={14}/><span>ログアウト</span>
-          </button>
         </div>
-      </aside>
+      </header>
 
-      {/* 3. 右: メインコンテンツ */}
-      <main className="flex-1 overflow-y-auto relative bg-white">
-        {/* ヘッダー画像エリア */}
-        <div className="h-32 md:h-48 bg-gradient-to-r from-gray-100 to-gray-200 relative group">
-          <div className="absolute bottom-4 left-4 md:left-12">
-             <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-                {currentOrg ? currentOrg.name : 'Loading...'}
-             </h1>
-             <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                <Users size={12}/> {session.user.email}
-             </p>
-          </div>
-        </div>
+      <main className="max-w-4xl mx-auto px-4 py-8 space-y-10 pb-24">
+        <TokenSyncer session={session} />
 
-        {/* コンテンツエリア */}
-        <div className="max-w-4xl mx-auto px-4 md:px-12 py-8 pb-24">
-            <TokenSyncer session={session} />
+        {/* ワークスペース読み込み待ち */}
+        {!currentOrg && (
+            <div className="text-center py-20 text-gray-500 flex flex-col items-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mb-4"></div>
+                ワークスペースを読み込んでいます...
+            </div>
+        )}
 
-            {!currentOrg && (
-                <div className="text-center py-20 text-gray-400">
-                    ワークスペースを読み込み中...<br/>
-                    (左側の「＋」ボタンから新しいワークスペースを作成できます)
-                </div>
-            )}
+        {/* メインコンテンツエリア */}
+        {currentOrg && (
+            <div key={currentOrg.id} className="animate-in fade-in duration-500 space-y-10">
+                
+                {/* 1. リクエスト受信箱 */}
+                <RequestInbox session={session} />
 
-            {currentOrg && activeTab === 'meeting' && (
-                // ★重要: keyを変えてコンポーネントを強制リセット
-                <div key={currentOrg.id} className="animation-fade-in space-y-8">
-                    
-                    <RequestInbox session={session} />
-
-                    <CalendarView session={session} />
-                    
-                    {/* orgId を渡して、その組織の設定を読み書きさせる */}
-                    <ScheduleSettings session={session} orgId={currentOrg.id} />
-
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <MeetingCard session={session} orgId={currentOrg.id} />
+                {/* 2. Active Calendar (カレンダービュー) */}
+                <section>
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold text-gray-700 flex items-center gap-2">
+                            <CalendarIcon className="text-purple-600"/> Active Calendar
+                        </h2>
                     </div>
-                    
-                    <RuleList session={session} orgId={currentOrg.id} />
+                    <CalendarView session={session} />
+                </section>
 
-                    {/* 予約ページリンク (orgId付き) */}
-                    <div className="bg-white p-6 rounded-xl border border-purple-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-purple-600"></div>
-                        <div>
-                            <h3 className="font-bold text-purple-900 text-base flex items-center gap-2">
-                                <ExternalLink size={18}/> あなたの公開予約ページ
+                {/* 3. 設定 & 予約リンクエリア */}
+                <section className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div className="flex-1 w-full">
+                            <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                <Settings size={18}/> 予約受付設定
                             </h3>
-                            <p className="text-sm text-gray-600 mt-1">
-                                このURLを社外の人に送ると、面談の予約リクエストを受け付けられます。<br/>
-                                <span className="text-green-600 font-bold flex items-center gap-1 mt-1">
-                                    <CheckCircle2 size={14}/> リアルタイム連動中
-                                </span>
+                            {/* 設定コンポーネント: ここで orgId を渡しているので保存可能です */}
+                            <ScheduleSettings session={session} orgId={currentOrg.id} />
+                        </div>
+
+                        <div className="hidden md:block w-px h-16 bg-gray-100"></div>
+
+                        <div className="flex-1 w-full flex flex-col items-end">
+                            <a 
+                                href={`/book/${session.user.id}?orgId=${currentOrg.id}`} 
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 bg-purple-600 text-white font-bold px-6 py-3 rounded-full hover:bg-purple-700 transition shadow-md"
+                            >
+                                <ExternalLink size={18}/> 予約ページを確認
+                            </a>
+                            <p className="text-xs text-gray-400 mt-2">
+                                相手に送るURL: .../book/{session.user.id}
                             </p>
                         </div>
-                        <a 
-                            // ★重要: どの組織への予約かわかるように orgId を付与
-                            href={`/book/${session.user.id}?orgId=${currentOrg.id}`} 
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full md:w-auto text-center bg-purple-600 text-white text-sm font-bold px-6 py-3 rounded-full hover:bg-purple-700 transition shadow-sm hover:shadow-md"
-                        >
-                            ページを開く
-                        </a>
                     </div>
-                </div>
-            )}
+                </section>
 
-            {currentOrg && activeTab === 'recruitment' && (
-                <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 animation-fade-in">
-                    <Briefcase className="mx-auto text-gray-300 mb-4" size={48} />
-                    <h3 className="text-xl font-bold text-gray-400">採用面談リスト</h3>
-                    <p className="text-gray-400 text-sm mt-2">
-                        {currentOrg.name} の採用情報をここに表示します。<br/>
-                        (現在開発中)
-                    </p>
-                </div>
-            )}
-        </div>
+                {/* 4. 自動調整ルール (MeetingCard & RuleList) */}
+                <section>
+                    <h2 className="text-xl font-bold text-gray-700 mb-4 flex items-center gap-2">
+                        <Bot className="text-blue-600"/> 自動調整ルール
+                    </h2>
+                    
+                    <div className="grid md:grid-cols-2 gap-6 mb-8">
+                        {/* 自動調整作成カード: orgId を渡しているのでエラーになりません */}
+                        <MeetingCard session={session} orgId={currentOrg.id} />
+                        
+                        {/* ここに将来、別のカードを追加できます */}
+                        <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center text-gray-400 text-sm p-6">
+                            新しい機能を追加予定...
+                        </div>
+                    </div>
+
+                    {/* 作成済みのルール一覧 */}
+                    <RuleList session={session} orgId={currentOrg.id} />
+                </section>
+
+            </div>
+        )}
       </main>
-    </div>
-  );
-}
-
-function SidebarItem({ icon, label, active = false, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) {
-  return (
-    <div 
-        onClick={onClick}
-        className={`flex items-center space-x-3 px-3 py-1.5 rounded-md cursor-pointer text-sm transition ${active ? 'bg-gray-200 text-gray-900 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}
-    >
-      <span className={active ? "text-purple-600" : "text-gray-500"}>{icon}</span>
-      <span>{label}</span>
     </div>
   );
 }
