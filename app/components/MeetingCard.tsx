@@ -1,20 +1,21 @@
 // app/components/MeetingCard.tsx
+'use client';
+
 import React, { useState } from 'react';
 import { RefreshCw, Sparkles, Loader2, ArrowRight, Bot, Check, CalendarCheck } from 'lucide-react';
 
 interface Props {
   session: any;
+  orgId?: string; // ★追加: エラー回避用に定義だけしておく
 }
 
-export default function MeetingCard({ session }: Props) {
+export default function MeetingCard({ session, orgId }: Props) {
   const [events, setEvents] = useState<any[]>([]);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
   const [message, setMessage] = useState('');
-  
-  // ★追加: 予定作成の状態管理
   const [creatingEventId, setCreatingEventId] = useState<number | null>(null);
   const [successLink, setSuccessLink] = useState<string | null>(null);
 
@@ -49,7 +50,7 @@ export default function MeetingCard({ session }: Props) {
     }
     setLoadingAI(true);
     setAiSuggestions([]);
-    setSuccessLink(null); // リセット
+    setSuccessLink(null);
 
     try {
       const res = await fetch('/api/gemini', {
@@ -67,19 +68,21 @@ export default function MeetingCard({ session }: Props) {
     }
   };
 
-  // 3. ★追加: 予定を確定する関数
+  // 3. 予定を確定
   const handleCreateEvent = async (suggestion: any, index: number) => {
     if(!confirm(`${suggestion.date} ${suggestion.time} で予定を作成しますか？`)) return;
 
-    setCreatingEventId(index); // ローディング開始
+    setCreatingEventId(index);
 
     try {
       const res = await fetch('/api/calendar/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session: session, // 鍵を渡す
-          eventDetails: suggestion
+          session: session,
+          eventDetails: suggestion,
+          // 将来的にここで orgId を送ることで、作成履歴をチームに紐付けられます
+          organization_id: orgId
         }),
       });
 
@@ -88,9 +91,9 @@ export default function MeetingCard({ session }: Props) {
       if (data.success) {
         setSuccessLink(data.link);
         alert('🎉 予定を作成しました！');
-        setAiSuggestions([]); // 提案リストをクリア
-        setPrompt(''); // 入力欄をクリア
-        fetchCalendar(); // 最新のカレンダーを再取得
+        setAiSuggestions([]);
+        setPrompt('');
+        fetchCalendar();
       } else {
         alert('作成失敗: ' + data.error);
       }
@@ -120,7 +123,6 @@ export default function MeetingCard({ session }: Props) {
       </div>
 
       <div className="p-5">
-        {/* 成功時のメッセージ */}
         {successLink && (
             <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md flex items-center justify-between text-green-800 text-sm">
                 <div className="flex items-center gap-2">
@@ -144,7 +146,6 @@ export default function MeetingCard({ session }: Props) {
             </div>
         </div>
 
-        {/* AI提案エリア */}
         {aiSuggestions.length > 0 && (
             <div className="mb-6 space-y-3 animation-fade-in">
                 <div className="text-sm font-bold text-purple-700 flex items-center gap-2">
@@ -157,26 +158,18 @@ export default function MeetingCard({ session }: Props) {
                             <div className="text-purple-700 text-sm">{suggestion.time}</div>
                             <div className="text-xs text-purple-500 mt-1">{suggestion.reason}</div>
                         </div>
-                        
-                        {/* 決定ボタン */}
                         <button 
                             onClick={() => handleCreateEvent(suggestion, index)}
                             disabled={creatingEventId !== null}
                             className="bg-white border border-purple-200 text-purple-600 hover:bg-purple-600 hover:text-white p-2 rounded-full transition shadow-sm"
-                            title="この日時で確定する"
                         >
-                            {creatingEventId === index ? (
-                                <Loader2 size={18} className="animate-spin text-purple-600"/>
-                            ) : (
-                                <Check size={18} />
-                            )}
+                            {creatingEventId === index ? <Loader2 size={18} className="animate-spin text-purple-600"/> : <Check size={18} />}
                         </button>
                     </div>
                 ))}
             </div>
         )}
 
-        {/* 入力エリア */}
         <div className="mt-2 pt-4 border-t border-gray-100">
             <div className="flex items-center space-x-2 bg-gray-50 p-2 rounded-md border focus-within:border-purple-400 transition">
                 <input 

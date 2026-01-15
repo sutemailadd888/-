@@ -1,16 +1,15 @@
-// app/page.tsx
+// app/page.tsx (Slack風レイアウト + Classic機能)
 'use client';
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Users, Calendar, LogOut, Briefcase, ExternalLink, CheckCircle2 } from 'lucide-react';
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
 import TokenSyncer from './components/TokenSyncer';
 import RequestInbox from './components/RequestInbox';
 import ScheduleSettings from './components/ScheduleSettings';
-// ★追加
 import WorkspaceSwitcher from './components/WorkspaceSwitcher';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -21,9 +20,8 @@ export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // ★追加: 現在選択中のワークスペース
+  // ワークスペース管理
   const [currentOrg, setCurrentOrg] = useState<any>(null);
-
   const [activeTab, setActiveTab] = useState<'meeting' | 'recruitment'>('meeting');
 
   useEffect(() => {
@@ -76,20 +74,15 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-white text-gray-800 font-sans overflow-hidden">
-      {/* ★構成変更: 
-         1. WorkspaceSwitcher (左端・黒)
-         2. Sidebar (その右・白)
-         3. Main (右側・メイン)
-      */}
       
-      {/* 1. 左端: ワークスペース切替 */}
+      {/* 1. 左端: ワークスペース切替 (Slack風) */}
       <WorkspaceSwitcher 
         session={session} 
         currentOrgId={currentOrg?.id} 
         onSwitch={(org) => setCurrentOrg(org)} 
       />
 
-      {/* 2. 左: メニューサイドバー */}
+      {/* 2. 左: メニューサイドバー (Slack風) */}
       <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col hidden md:flex">
         <div className="p-4 border-b border-gray-200 h-16 flex items-center">
             {currentOrg ? (
@@ -108,7 +101,7 @@ export default function Home() {
                 active={activeTab === 'meeting'} 
                 onClick={() => setActiveTab('meeting')}
             />
-            {/* ★ここを動的に変えられるのがSlack化のメリット */}
+            {/* 将来の拡張用 */}
             <SidebarItem 
                 icon={<Briefcase size={18} />} 
                 label="採用面談リスト" 
@@ -148,60 +141,45 @@ export default function Home() {
 
         {/* コンテンツエリア */}
         <div className="max-w-4xl mx-auto px-4 md:px-12 py-8 pb-24">
-            {/* 自動トークン同期 */}
             <TokenSyncer session={session} />
 
-            {/* まだ組織が読み込まれていない場合 */}
             {!currentOrg && (
                 <div className="text-center py-20 text-gray-400">
-                    ワークスペースを読み込み中、または作成してください...
+                    ワークスペースを選択または作成してください...
                 </div>
             )}
 
+            {/* ★ここから中身は「使い慣れたClassicデザイン」そのものです */}
             {currentOrg && activeTab === 'meeting' && (
-                <div className="animation-fade-in space-y-8">
-                    {/* ここに将来「組織ごとの設定」を渡すようになります */}
+                <div key={currentOrg.id} className="animation-fade-in space-y-8">
                     
-                    {/* 未承認リクエスト (注意: まだ個人IDベースで動いてます) */}
+                    {/* リクエスト受信箱 */}
                     <RequestInbox session={session} />
 
-                    {/* カレンダー */}
+                    {/* Active Calendar */}
                     <CalendarView session={session} />
                     
-                    {/* 設定ボタン */}
-                    <ScheduleSettings session={session} />
-
-                    {/* 自動調整カード */}
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <MeetingCard session={session} />
-                    </div>
-                    
-                    {/* ルールリスト */}
-                    <RuleList session={session} />
-
-                    {/* 予約ページリンク */}
-                    <div className="bg-white p-6 rounded-xl border border-purple-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-purple-600"></div>
-                        <div>
-                            <h3 className="font-bold text-purple-900 text-base flex items-center gap-2">
-                                <ExternalLink size={18}/> あなたの公開予約ページ
-                            </h3>
-                            <p className="text-sm text-gray-600 mt-1">
-                                このURLを社外の人に送ると、面談の予約リクエストを受け付けられます。<br/>
-                                <span className="text-green-600 font-bold flex items-center gap-1 mt-1">
-                                    <CheckCircle2 size={14}/> リアルタイム連動中
-                                </span>
-                            </p>
-                        </div>
+                    {/* 設定と予約リンク (orgIdを渡す) */}
+                    <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                        <ScheduleSettings session={session} orgId={currentOrg.id} />
+                        
                         <a 
-                            href={`/book/${session.user.id}`} 
+                            href={`/book/${session.user.id}?orgId=${currentOrg.id}`} 
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="w-full md:w-auto text-center bg-purple-600 text-white text-sm font-bold px-6 py-3 rounded-full hover:bg-purple-700 transition shadow-sm hover:shadow-md"
+                            className="flex items-center gap-2 text-sm text-purple-600 hover:text-purple-800 font-bold bg-purple-50 px-4 py-2 rounded-full transition"
                         >
-                            ページを開く
+                            <ExternalLink size={16}/> 自分の予約ページを確認する
                         </a>
                     </div>
+
+                    {/* 自動調整 & AIチャット (orgIdを渡す) */}
+                    <div className="grid md:grid-cols-1 gap-6">
+                      <MeetingCard session={session} orgId={currentOrg.id} />
+                    </div>
+                    
+                    <RuleList session={session} orgId={currentOrg.id} />
+
                 </div>
             )}
 

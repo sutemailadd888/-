@@ -2,13 +2,15 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { CalendarClock, Plus, Loader2, Play, Check, Users, BellRing, Trash2, Pencil, Save, X } from 'lucide-react';
+import { CalendarClock, Plus, Loader2, Play, Check, Users, BellRing, Trash2, Pencil, Save } from 'lucide-react';
 
+// ★ orgIdを受け取るように変更
 interface Props {
   session: any;
+  orgId: string;
 }
 
-export default function RuleList({ session }: Props) {
+export default function RuleList({ session, orgId }: Props) {
   const [rules, setRules] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -31,21 +33,22 @@ export default function RuleList({ session }: Props) {
 
   const todayDate = new Date().getDate();
 
+  // ★ orgIdが変わったら再取得
   useEffect(() => {
     fetchRules();
-  }, [session]);
+  }, [session, orgId]);
 
-  // ★修正: トークン取得を確実にする
   const getToken = () => {
-    // 優先順位: Supabaseのアクセストークン > Googleのプロバイダートークン
     return session?.access_token || session?.provider_token;
   };
 
   const fetchRules = async () => {
     const token = getToken();
-    if (!token) return;
+    if (!token || !orgId) return;
+
     try {
-      const res = await fetch('/api/rules', {
+      // ★ orgIdを使って絞り込み
+      const res = await fetch(`/api/rules?orgId=${orgId}`, {
           headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -55,16 +58,9 @@ export default function RuleList({ session }: Props) {
 
   const handleAddRule = async () => {
     const token = getToken();
-    if (!token) {
-        alert("認証トークンが見つかりません。一度ログアウトして再ログインしてください。");
-        return;
-    }
-    
-    // ★追加: 入力チェック
-    if (!newDay) {
-        alert("「リマインド日」を入力してください");
-        return;
-    }
+    if (!token) return alert("認証トークンが見つかりません。");
+    if (!orgId) return alert("ワークスペースが選択されていません。");
+    if (!newDay) return alert("「リマインド日」を入力してください");
 
     setLoading(true);
     try {
@@ -75,20 +71,19 @@ export default function RuleList({ session }: Props) {
             Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
+          organization_id: orgId, // ★重要: ここでチームIDを保存！
           title: newTitle,
-          targetDay: parseInt(newDay), // 数値に変換
+          targetDay: parseInt(newDay),
           prompt: newPrompt,
           attendees: newAttendees
         }),
       });
 
-      // ★追加: エラーハンドリング
       if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.error || "保存に失敗しました");
       }
       
-      // 成功時
       setIsAdding(false);
       setNewTitle('');
       setNewAttendees('');
@@ -146,10 +141,7 @@ export default function RuleList({ session }: Props) {
 
   const runRule = async (rule: any) => {
     const token = session?.provider_token;
-    if (!token) {
-        alert("カレンダー連携のトークンがありません。再ログインしてください。");
-        return;
-    }
+    if (!token) return alert("再ログインしてください。");
 
     setRunningRuleId(rule.id);
     setSuggestions({ ...suggestions, [rule.id]: null });
@@ -164,9 +156,7 @@ export default function RuleList({ session }: Props) {
         
         const today = new Date();
         let targetMonth = today.getMonth();
-        if (today.getDate() >= 20) {
-            targetMonth = targetMonth + 1;
-        }
+        if (today.getDate() >= 20) targetMonth = targetMonth + 1;
 
         const targetDate = new Date(today.getFullYear(), targetMonth, 1);
         const dateString = `${targetDate.getFullYear()}年${targetDate.getMonth() + 1}月`;
@@ -187,7 +177,7 @@ export default function RuleList({ session }: Props) {
 
     } catch (error) {
         console.error(error);
-        alert("実行中にエラーが発生しました");
+        alert("実行エラー");
     } finally {
         setRunningRuleId(null);
     }
@@ -208,10 +198,10 @@ export default function RuleList({ session }: Props) {
         });
         const data = await res.json();
         if (data.success) {
-            alert("🎉 予定を作成し、招待状を送りました！");
+            alert("🎉 予定を作成しました！");
             setSuggestions({});
         } else {
-            alert("作成に失敗しました: " + data.error);
+            alert("作成失敗: " + data.error);
         }
       } catch (e) {
           alert("作成失敗");
@@ -262,6 +252,7 @@ export default function RuleList({ session }: Props) {
           </div>
       )}
 
+      {/* 以下、表示部分は一切変更なし */}
       <div className="space-y-4">
           {rules.length === 0 && !isAdding && (
               <p className="text-sm text-gray-400 text-center py-4 border border-dashed rounded-lg">ルールがありません</p>
