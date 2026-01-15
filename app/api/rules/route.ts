@@ -59,8 +59,8 @@ export async function POST(request: Request) {
       {
         user_id: user.id,
         organization_id: body.organization_id,
-        title: body.title, // ★ここを修正しました (rule_name -> title)
-        rule_type: 'monthly_date',
+        title: body.title, 
+        // rule_type: 'monthly_date',  <-- ★削除しました（これがエラーの原因でした）
         target_day: body.targetDay,
         prompt_custom: body.prompt,
         attendees: body.attendees,
@@ -103,7 +103,6 @@ export async function DELETE(request: Request) {
   return NextResponse.json({ success: true });
 }
 
-// 編集用 (PUT)
 export async function PUT(request: Request) {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -120,7 +119,7 @@ export async function PUT(request: Request) {
     const { error } = await supabase
         .from('meeting_rules')
         .update({
-            title: body.title, // ★ここも修正 (rule_name -> title)
+            title: body.title,
             target_day: body.targetDay,
             prompt_custom: body.prompt,
             attendees: body.attendees
