@@ -1,201 +1,118 @@
 // app/components/MeetingCard.tsx
-import React, { useState } from 'react';
-import { RefreshCw, Sparkles, Loader2, ArrowRight, Bot, Check, CalendarCheck } from 'lucide-react';
+'use client';
 
+import React, { useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import { Bot, Calendar, Loader2, ArrowRight } from 'lucide-react';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// ★変更: orgId を受け取る
 interface Props {
   session: any;
+  orgId: string;
 }
 
-export default function MeetingCard({ session }: Props) {
-  const [events, setEvents] = useState<any[]>([]);
-  const [loadingCalendar, setLoadingCalendar] = useState(false);
-  const [prompt, setPrompt] = useState('');
-  const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [message, setMessage] = useState('');
-  
-  // ★追加: 予定作成の状態管理
-  const [creatingEventId, setCreatingEventId] = useState<number | null>(null);
-  const [successLink, setSuccessLink] = useState<string | null>(null);
+export default function MeetingCard({ session, orgId }: Props) {
+  const [loading, setLoading] = useState(false);
+  const [dayType, setDayType] = useState('weekday'); // weekday or specific
+  const [weekNum, setWeekNum] = useState('1'); // 第1
+  const [weekday, setWeekday] = useState('monday'); // 月曜日
+  const [startTime, setStartTime] = useState('10:00');
+  const [duration, setDuration] = useState('60');
 
-  // 1. カレンダー取得
-  const fetchCalendar = async () => {
-    if (!session?.provider_token) return;
-    setLoadingCalendar(true);
-    try {
-      const now = new Date().toISOString();
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now}&maxResults=10&singleEvents=true&orderBy=startTime`,
-        { headers: { Authorization: `Bearer ${session.provider_token}` } }
-      );
-      const data = await response.json();
-      if (data.items) {
-        setEvents(data.items);
-        setMessage('✅ カレンダーを取得しました。AIに入力してください。');
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoadingCalendar(false);
-    }
-  };
-
-  // 2. AI提案
-  const askGemini = async () => {
-    if (!prompt) return;
-    if (events.length === 0) {
-      alert('先に「カレンダー同期」ボタンを押してください！');
-      return;
-    }
-    setLoadingAI(true);
-    setAiSuggestions([]);
-    setSuccessLink(null); // リセット
+  const handleCreateRule = async () => {
+    if (!orgId) return alert("ワークスペースが読み込まれていません");
+    setLoading(true);
 
     try {
-      const res = await fetch('/api/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ events, userPrompt: prompt }),
-      });
-      const data = await res.json();
-      if (data.suggestions) setAiSuggestions(data.suggestions);
-    } catch (error) {
-      console.error(error);
-      alert('AI呼び出しエラー');
+      // 1. ルールを保存 (★organization_id を追加！)
+      const { error } = await supabase
+        .from('meeting_rules')
+        .insert([
+          {
+            user_id: session.user.id,
+            organization_id: orgId, // ここが必須！
+            rule_name: `毎月 第${weekNum} ${weekday}の定期調整`,
+            rule_type: 'monthly_weekday',
+            config: {
+                week_number: parseInt(weekNum),
+                weekday: weekday,
+                start_time: startTime,
+                duration_minutes: parseInt(duration)
+            },
+            is_active: true
+          }
+        ]);
+
+      if (error) throw error;
+
+      alert('✅ 自動調整ルールを作成しました！\n(次のバッチ処理でスケジュールが仮押さえされます)');
+
+    } catch (e: any) {
+      alert(`エラー: ${e.message}`);
     } finally {
-      setLoadingAI(false);
-    }
-  };
-
-  // 3. ★追加: 予定を確定する関数
-  const handleCreateEvent = async (suggestion: any, index: number) => {
-    if(!confirm(`${suggestion.date} ${suggestion.time} で予定を作成しますか？`)) return;
-
-    setCreatingEventId(index); // ローディング開始
-
-    try {
-      const res = await fetch('/api/calendar/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session: session, // 鍵を渡す
-          eventDetails: suggestion
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        setSuccessLink(data.link);
-        alert('🎉 予定を作成しました！');
-        setAiSuggestions([]); // 提案リストをクリア
-        setPrompt(''); // 入力欄をクリア
-        fetchCalendar(); // 最新のカレンダーを再取得
-      } else {
-        alert('作成失敗: ' + data.error);
-      }
-    } catch (error) {
-      console.error(error);
-      alert('通信エラーが発生しました');
-    } finally {
-      setCreatingEventId(null);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="border rounded-lg shadow-sm bg-white overflow-hidden my-6 max-w-2xl border-gray-200 hover:border-purple-300 transition-colors">
-      <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <Sparkles className="text-purple-600" size={18} />
-          <span className="font-semibold text-gray-700 text-sm">Active Scheduler</span>
+    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
+          <Bot size={24} />
         </div>
-        <button 
-          onClick={fetchCalendar}
-          disabled={loadingCalendar}
-          className="text-xs bg-white border border-gray-300 hover:bg-gray-100 px-3 py-1 rounded-full font-medium flex items-center space-x-1 transition"
-        >
-          {loadingCalendar ? <Loader2 size={12} className="animate-spin"/> : <RefreshCw size={12} />}
-          <span>カレンダー同期</span>
-        </button>
+        <div>
+          <h3 className="font-bold text-gray-800">AI 定期調整エージェント</h3>
+          <p className="text-xs text-gray-500">毎月の定例予定を自動で確保します</p>
+        </div>
       </div>
 
-      <div className="p-5">
-        {/* 成功時のメッセージ */}
-        {successLink && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md flex items-center justify-between text-green-800 text-sm">
-                <div className="flex items-center gap-2">
-                    <CalendarCheck size={18}/>
-                    <span>予定をカレンダーに追加しました！</span>
-                </div>
-                <a href={successLink} target="_blank" rel="noreferrer" className="underline font-bold hover:text-green-600">
-                    Googleカレンダーで見る &rarr;
-                </a>
+      <div className="space-y-4">
+        <div className="bg-gray-50 p-3 rounded-lg text-sm space-y-3 border border-gray-100">
+            <div className="flex items-center gap-2">
+                <span className="text-gray-500 font-bold shrink-0">頻度:</span>
+                <select className="bg-white border border-gray-300 rounded px-2 py-1 text-gray-700 w-full">
+                    <option>毎月</option>
+                </select>
             </div>
-        )}
+            
+            <div className="flex items-center gap-2">
+                <span className="text-gray-500 font-bold shrink-0">日時:</span>
+                <div className="flex gap-1 w-full">
+                    <select value={weekNum} onChange={(e)=>setWeekNum(e.target.value)} className="bg-white border border-gray-300 rounded px-1 py-1 text-gray-700">
+                        <option value="1">第1</option>
+                        <option value="2">第2</option>
+                        <option value="3">第3</option>
+                        <option value="4">第4</option>
+                    </select>
+                    <select value={weekday} onChange={(e)=>setWeekday(e.target.value)} className="bg-white border border-gray-300 rounded px-1 py-1 text-gray-700 flex-1">
+                        <option value="monday">月曜日</option>
+                        <option value="tuesday">火曜日</option>
+                        <option value="wednesday">水曜日</option>
+                        <option value="thursday">木曜日</option>
+                        <option value="friday">金曜日</option>
+                    </select>
+                </div>
+            </div>
 
-        <div className="mb-4">
-            <p className="text-xs text-gray-500 mb-2">{message || 'まずはカレンダー同期を押してください'}</p>
-            <div className="flex flex-wrap gap-2">
-                {events.slice(0, 3).map((e: any, i) => (
-                    <span key={i} className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">
-                        📅 {e.summary}
-                    </span>
-                ))}
+            <div className="flex items-center gap-2">
+                 <span className="text-gray-500 font-bold shrink-0">開始:</span>
+                 <input type="time" value={startTime} onChange={(e)=>setStartTime(e.target.value)} className="bg-white border border-gray-300 rounded px-2 py-1 text-gray-700 w-full"/>
             </div>
         </div>
 
-        {/* AI提案エリア */}
-        {aiSuggestions.length > 0 && (
-            <div className="mb-6 space-y-3 animation-fade-in">
-                <div className="text-sm font-bold text-purple-700 flex items-center gap-2">
-                    <Bot size={16}/> Geminiの提案:
-                </div>
-                {aiSuggestions.map((suggestion: any, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 rounded-md border border-purple-100 bg-purple-50 group hover:bg-purple-100 transition">
-                        <div>
-                            <div className="text-purple-900 font-bold">{suggestion.date}</div>
-                            <div className="text-purple-700 text-sm">{suggestion.time}</div>
-                            <div className="text-xs text-purple-500 mt-1">{suggestion.reason}</div>
-                        </div>
-                        
-                        {/* 決定ボタン */}
-                        <button 
-                            onClick={() => handleCreateEvent(suggestion, index)}
-                            disabled={creatingEventId !== null}
-                            className="bg-white border border-purple-200 text-purple-600 hover:bg-purple-600 hover:text-white p-2 rounded-full transition shadow-sm"
-                            title="この日時で確定する"
-                        >
-                            {creatingEventId === index ? (
-                                <Loader2 size={18} className="animate-spin text-purple-600"/>
-                            ) : (
-                                <Check size={18} />
-                            )}
-                        </button>
-                    </div>
-                ))}
-            </div>
-        )}
-
-        {/* 入力エリア */}
-        <div className="mt-2 pt-4 border-t border-gray-100">
-            <div className="flex items-center space-x-2 bg-gray-50 p-2 rounded-md border focus-within:border-purple-400 transition">
-                <input 
-                    type="text" 
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="例: 明日の午後で60分のMTGを入れたい..." 
-                    className="bg-transparent text-sm w-full outline-none text-gray-700 placeholder-gray-400"
-                />
-                <button 
-                    onClick={askGemini}
-                    disabled={loadingAI || !prompt}
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs px-4 py-2 rounded-md transition disabled:opacity-50 flex items-center gap-2"
-                >
-                    {loadingAI && <Loader2 size={12} className="animate-spin"/>}
-                    AIに依頼
-                </button>
-            </div>
-        </div>
+        <button 
+            onClick={handleCreateRule} 
+            disabled={loading}
+            className="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
+        >
+            {loading ? <Loader2 className="animate-spin" size={16}/> : <ArrowRight size={16}/>}
+            エージェントを起動
+        </button>
       </div>
     </div>
   );

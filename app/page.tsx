@@ -1,16 +1,14 @@
-// app/page.tsx
 'use client';
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Users, Calendar, LogOut, Briefcase, ExternalLink, CheckCircle2 } from 'lucide-react';
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
 import TokenSyncer from './components/TokenSyncer';
 import RequestInbox from './components/RequestInbox';
 import ScheduleSettings from './components/ScheduleSettings';
-// ★追加
 import WorkspaceSwitcher from './components/WorkspaceSwitcher';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -21,9 +19,8 @@ export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // ★追加: 現在選択中のワークスペース
+  // 現在選択中のワークスペース
   const [currentOrg, setCurrentOrg] = useState<any>(null);
-
   const [activeTab, setActiveTab] = useState<'meeting' | 'recruitment'>('meeting');
 
   useEffect(() => {
@@ -76,11 +73,6 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-white text-gray-800 font-sans overflow-hidden">
-      {/* ★構成変更: 
-         1. WorkspaceSwitcher (左端・黒)
-         2. Sidebar (その右・白)
-         3. Main (右側・メイン)
-      */}
       
       {/* 1. 左端: ワークスペース切替 */}
       <WorkspaceSwitcher 
@@ -93,7 +85,9 @@ export default function Home() {
       <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col hidden md:flex">
         <div className="p-4 border-b border-gray-200 h-16 flex items-center">
             {currentOrg ? (
-                <div className="font-bold text-gray-800 truncate">{currentOrg.name}</div>
+                <div className="font-bold text-gray-800 truncate" title={currentOrg.name}>
+                    {currentOrg.name}
+                </div>
             ) : (
                 <div className="text-gray-400 text-sm animate-pulse">Loading...</div>
             )}
@@ -108,7 +102,6 @@ export default function Home() {
                 active={activeTab === 'meeting'} 
                 onClick={() => setActiveTab('meeting')}
             />
-            {/* ★ここを動的に変えられるのがSlack化のメリット */}
             <SidebarItem 
                 icon={<Briefcase size={18} />} 
                 label="採用面談リスト" 
@@ -120,7 +113,7 @@ export default function Home() {
 
         <div className="p-4 border-t border-gray-200">
           <div className="flex items-center space-x-3 mb-3">
-            <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-gray-200"/>
+            <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-gray-200" alt="avatar"/>
             <div className="text-xs truncate w-32">
                 <div className="font-semibold text-gray-700">{session.user.user_metadata.full_name}</div>
                 <div className="text-gray-400">Online</div>
@@ -148,38 +141,33 @@ export default function Home() {
 
         {/* コンテンツエリア */}
         <div className="max-w-4xl mx-auto px-4 md:px-12 py-8 pb-24">
-            {/* 自動トークン同期 */}
             <TokenSyncer session={session} />
 
-            {/* まだ組織が読み込まれていない場合 */}
             {!currentOrg && (
                 <div className="text-center py-20 text-gray-400">
-                    ワークスペースを読み込み中、または作成してください...
+                    ワークスペースを読み込み中...<br/>
+                    (左側の「＋」ボタンから新しいワークスペースを作成できます)
                 </div>
             )}
 
             {currentOrg && activeTab === 'meeting' && (
-                <div className="animation-fade-in space-y-8">
-                    {/* ここに将来「組織ごとの設定」を渡すようになります */}
+                // ★重要: keyを変えてコンポーネントを強制リセット
+                <div key={currentOrg.id} className="animation-fade-in space-y-8">
                     
-                    {/* 未承認リクエスト (注意: まだ個人IDベースで動いてます) */}
                     <RequestInbox session={session} />
 
-                    {/* カレンダー */}
                     <CalendarView session={session} />
                     
-                    {/* 設定ボタン */}
+                    {/* orgId を渡して、その組織の設定を読み書きさせる */}
                     <ScheduleSettings session={session} orgId={currentOrg.id} />
 
-                    {/* 自動調整カード */}
                     <div className="grid md:grid-cols-2 gap-6">
-                      <MeetingCard session={session} />
+                      <MeetingCard session={session} orgId={currentOrg.id} />
                     </div>
                     
-                    {/* ルールリスト */}
-                    <RuleList session={session} />
+                    <RuleList session={session} orgId={currentOrg.id} />
 
-                    {/* 予約ページリンク */}
+                    {/* 予約ページリンク (orgId付き) */}
                     <div className="bg-white p-6 rounded-xl border border-purple-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-1 h-full bg-purple-600"></div>
                         <div>
@@ -194,7 +182,8 @@ export default function Home() {
                             </p>
                         </div>
                         <a 
-                            href={`/book/${session.user.id}`} 
+                            // ★重要: どの組織への予約かわかるように orgId を付与
+                            href={`/book/${session.user.id}?orgId=${currentOrg.id}`} 
                             target="_blank"
                             rel="noopener noreferrer"
                             className="w-full md:w-auto text-center bg-purple-600 text-white text-sm font-bold px-6 py-3 rounded-full hover:bg-purple-700 transition shadow-sm hover:shadow-md"
@@ -215,7 +204,6 @@ export default function Home() {
                     </p>
                 </div>
             )}
-            
         </div>
       </main>
     </div>
