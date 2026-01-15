@@ -169,7 +169,7 @@ export default function Home() {
                     <CalendarView session={session} />
                     
                     {/* 設定ボタン */}
-                    <ScheduleSettings session={session} />
+                    <ScheduleSettings session={session} orgId={currentOrg.id} />
 
                     {/* 自動調整カード */}
                     <div className="grid md:grid-cols-2 gap-6">
