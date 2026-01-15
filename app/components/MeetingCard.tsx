@@ -3,10 +3,11 @@
 
 import React, { useState } from 'react';
 import { RefreshCw, Sparkles, Loader2, ArrowRight, Bot, Check, CalendarCheck } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
 interface Props {
   session: any;
-  orgId?: string; // ★追加: エラー回避用に定義だけしておく
+  orgId?: string;
 }
 
 export default function MeetingCard({ session, orgId }: Props) {
@@ -19,29 +20,66 @@ export default function MeetingCard({ session, orgId }: Props) {
   const [creatingEventId, setCreatingEventId] = useState<number | null>(null);
   const [successLink, setSuccessLink] = useState<string | null>(null);
 
-  // 1. カレンダー取得
+  // カレンダー取得 (トークン切れ対策強化版)
   const fetchCalendar = async () => {
-    if (!session?.provider_token) return;
     setLoadingCalendar(true);
+    setMessage('');
+
     try {
+      // 1. まずセッションのトークンを試す
+      let token = session?.provider_token;
+
+      // 2. なければDB (user_secrets) からの取得を試みる
+      if (!token) {
+        console.log("Session token missing. Fetching from DB...");
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
+        const { data } = await supabase
+            .from('user_secrets')
+            .select('access_token')
+            .eq('user_id', session?.user?.id)
+            .single();
+        
+        if (data?.access_token) {
+            token = data.access_token;
+        }
+      }
+
+      // 3. それでもなければエラー
+      if (!token) {
+        alert("Googleカレンダーの連携トークンが見つかりません。\n一度ログアウトし、再度Googleでログインしてください。");
+        setLoadingCalendar(false);
+        return;
+      }
+
       const now = new Date().toISOString();
       const response = await fetch(
         `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now}&maxResults=10&singleEvents=true&orderBy=startTime`,
-        { headers: { Authorization: `Bearer ${session.provider_token}` } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      if (!response.ok) {
+        throw new Error("Google API Error: " + response.status);
+      }
+
       const data = await response.json();
       if (data.items) {
         setEvents(data.items);
         setMessage('✅ カレンダーを取得しました。AIに入力してください。');
+      } else {
+        setMessage('予定が見つかりませんでした。');
       }
-    } catch (error) {
+
+    } catch (error: any) {
       console.error(error);
+      alert(`カレンダー取得エラー: ${error.message}\n(再ログインを試してください)`);
     } finally {
       setLoadingCalendar(false);
     }
   };
 
-  // 2. AI提案
   const askGemini = async () => {
     if (!prompt) return;
     if (events.length === 0) {
@@ -68,7 +106,6 @@ export default function MeetingCard({ session, orgId }: Props) {
     }
   };
 
-  // 3. 予定を確定
   const handleCreateEvent = async (suggestion: any, index: number) => {
     if(!confirm(`${suggestion.date} ${suggestion.time} で予定を作成しますか？`)) return;
 
@@ -81,8 +118,7 @@ export default function MeetingCard({ session, orgId }: Props) {
         body: JSON.stringify({
           session: session,
           eventDetails: suggestion,
-          // 将来的にここで orgId を送ることで、作成履歴をチームに紐付けられます
-          organization_id: orgId
+          organization_id: orgId // 将来のために送信
         }),
       });
 
@@ -138,7 +174,7 @@ export default function MeetingCard({ session, orgId }: Props) {
         <div className="mb-4">
             <p className="text-xs text-gray-500 mb-2">{message || 'まずはカレンダー同期を押してください'}</p>
             <div className="flex flex-wrap gap-2">
-                {events.slice(0, 3).map((e: any, i) => (
+                {events.length > 0 && events.slice(0, 3).map((e: any, i) => (
                     <span key={i} className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">
                         📅 {e.summary}
                     </span>
