@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-// ★修正: 使っていないアイコン(X, AlertCircle)を削除
+// ★修正1: 使っていない X, AlertCircle を削除しました
 import { Mail, Check, Loader2, Calendar, Clock } from 'lucide-react';
 
 const supabase = createClient(
@@ -18,7 +18,7 @@ interface Props {
 
 export default function RequestInbox({ session, orgId }: Props) {
   const [requests, setRequests] = useState<any[]>([]);
-  // ★修正: 使っていない loading ステートを削除
+  // ★修正2: 使っていない loading を削除しました
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -107,7 +107,6 @@ export default function RequestInbox({ session, orgId }: Props) {
       <div className="space-y-4">
         {requests.map((req) => (
             <div key={req.id} className="border border-gray-200 rounded-lg p-4 flex flex-col md:flex-row gap-4 items-start md:items-center bg-gray-50">
-                
                 <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                         <span className="bg-white border border-gray-300 text-gray-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
