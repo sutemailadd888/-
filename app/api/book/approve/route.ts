@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
     try {
         await resend.emails.send({
-            from: 'GAKU-HUB OS <onboarding@resend.dev>',
+            from: 'GAKU-HUB OS <noreply@gaku-hub.com>',
             // ★注意: Resend無料版は、ここで指定できるのは「自分の登録メアド」だけです。
             // テスト時は bookingReq.guest_email ではなく、あなたのメールアドレスに固定することをお勧めします。
             to: bookingReq.guest_email, 

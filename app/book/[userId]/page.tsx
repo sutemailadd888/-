@@ -98,12 +98,15 @@ export default function BookingPage() {
       if (error) throw error;
 
       // ★追加: 2. メール通知を送信 (Resend API)
-      // ※注意: テスト中は to を「あなたのメールアドレス」に設定してください
+      // ★修正: 送信元(from) をあなたのドメインに変更
       await fetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            to: 'sutemailadd888@gmail.com', // ←★ここをあなたの受信可能なメールアドレスに書き換えてください！
+            // 送信元: onboarding@resend.dev ではなく、あなたのドメインにする
+            // (例: noreply@gaku-hub.com, system@gaku-hub.com など、@の前は自由です)
+            from: 'GAKU-HUB OS <noreply@gaku-hub.com>', 
+            to: 'your-email@example.com', // 受信はあなたのままでOK
             subject: `【予約リクエスト】${guestName}様より`,
             html: `
                 <h3>新しい予約リクエストが届きました</h3>
