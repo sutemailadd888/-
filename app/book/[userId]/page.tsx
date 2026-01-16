@@ -1,10 +1,9 @@
-// app/book/[userId]/page.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Mail, MessageSquare, CheckCircle, Loader2, ChevronLeft } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation'; // ★ useSearchParams を追加
 
 // 匿名ユーザーとして書き込むためのクライアント
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -13,7 +12,9 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function BookingPage() {
   const params = useParams();
-  const hostUserId = params.userId as string; // URLからあなたのIDを取得
+  const searchParams = useSearchParams(); // ★追加
+  const hostUserId = params.userId as string;
+  const orgId = searchParams.get('orgId'); // ★URLからチームIDを取得
 
   // 画面遷移の状態管理
   const [step, setStep] = useState<'date' | 'form' | 'done'>('date');
@@ -28,8 +29,6 @@ export default function BookingPage() {
   // ローディング状態
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
-
-  // APIから取得した空き時間リスト
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
 
   // 日付が選ばれたら、空き時間をAPIから取得する
@@ -41,12 +40,12 @@ export default function BookingPage() {
 
   const fetchSlots = async () => {
     setLoadingSlots(true);
-    setAvailableSlots([]); // 一旦クリア
-    setSelectedTime('');   // 時間選択もリセット
+    setAvailableSlots([]);
+    setSelectedTime('');
 
     try {
-        // 自作したAPIを叩く
-        const res = await fetch(`/api/book/slots?hostId=${hostUserId}&date=${selectedDate}`);
+        // ★APIにも orgId を渡して、そのチームの設定（定休日など）を読み込ませる
+        const res = await fetch(`/api/book/slots?hostId=${hostUserId}&date=${selectedDate}&orgId=${orgId}`);
         const data = await res.json();
         
         if (data.slots) {
@@ -62,21 +61,23 @@ export default function BookingPage() {
     }
   };
 
-  // 送信処理
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // ★重要: チームIDがない場合はエラーにする（不正なURLなど）
+    if (!orgId) {
+        alert("予約エラー: ワークスペース情報が見つかりません。URLを確認してください。");
+        return;
+    }
+    
     setLoadingSubmit(true);
 
     try {
-      // ★修正: 日本時間 (+09:00) を明示的に付けて保存する
       const startHour = parseInt(selectedTime.split(':')[0]);
       const endHour = startHour + 1;
 
-      // 時間を2桁に揃える (例: 9 -> 09)
-      const startTimeStr = selectedTime.padStart(5, '0'); // "09:00" or "10:00"
+      const startTimeStr = selectedTime.padStart(5, '0');
       const endTimeStr = endHour.toString().padStart(2, '0') + ':00';
 
-      // YYYY-MM-DDTHH:MM:00+09:00 の形式にする
       const startDateTime = `${selectedDate}T${startTimeStr}:00+09:00`;
       const endDateTime = `${selectedDate}T${endTimeStr}:00+09:00`;
 
@@ -85,6 +86,7 @@ export default function BookingPage() {
         .insert([
           {
             host_user_id: hostUserId,
+            organization_id: orgId, // ★ここ！これが無いとエラーになります
             guest_name: guestName,
             guest_email: guestEmail,
             start_time: startDateTime,
@@ -97,17 +99,15 @@ export default function BookingPage() {
       if (error) throw error;
       setStep('done');
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('予約リクエストの送信に失敗しました。');
+      alert('予約リクエストの送信に失敗しました: ' + error.message);
     } finally {
       setLoadingSubmit(false);
     }
   };
 
-  // --- 画面表示 ---
-
-  // 1. 完了画面
+  // --- 画面表示 (ここは変更なし) ---
   if (step === 'done') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -135,7 +135,6 @@ export default function BookingPage() {
         
         {/* 左側: ホスト情報エリア */}
         <div className="md:w-1/3 bg-purple-600 p-8 text-white flex flex-col justify-between relative overflow-hidden">
-          {/* 装飾用の背景円 */}
           <div className="absolute top-[-50px] left-[-50px] w-32 h-32 bg-white opacity-10 rounded-full"></div>
           <div className="absolute bottom-[-20px] right-[-20px] w-48 h-48 bg-white opacity-10 rounded-full"></div>
 
@@ -176,7 +175,7 @@ export default function BookingPage() {
                         <input 
                             type="date" 
                             value={selectedDate} 
-                            min={new Date().toISOString().split('T')[0]} // 今日以降しか選べないようにする
+                            min={new Date().toISOString().split('T')[0]}
                             onChange={e => { setSelectedDate(e.target.value); setSelectedTime(''); }} 
                             className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-purple-200 outline-none transition"
                         />
@@ -242,7 +241,6 @@ export default function BookingPage() {
                     お客様情報を入力
                   </h2>
 
-                  {/* 選択した日時の確認表示 */}
                   <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 mb-6 flex items-center gap-2 text-purple-800 text-sm font-bold">
                     <Calendar size={16}/> {selectedDate}
                     <Clock size={16} className="ml-2"/> {selectedTime} 〜
