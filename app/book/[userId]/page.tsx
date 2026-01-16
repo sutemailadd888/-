@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Mail, MessageSquare, CheckCircle, Loader2, ChevronLeft } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { useParams, useSearchParams } from 'next/navigation'; // ★ useSearchParams を追加
+import { useParams, useSearchParams } from 'next/navigation';
 
 // 匿名ユーザーとして書き込むためのクライアント
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -12,9 +12,9 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function BookingPage() {
   const params = useParams();
-  const searchParams = useSearchParams(); // ★追加
+  const searchParams = useSearchParams();
   const hostUserId = params.userId as string;
-  const orgId = searchParams.get('orgId'); // ★URLからチームIDを取得
+  const orgId = searchParams.get('orgId');
 
   // 画面遷移の状態管理
   const [step, setStep] = useState<'date' | 'form' | 'done'>('date');
@@ -44,7 +44,6 @@ export default function BookingPage() {
     setSelectedTime('');
 
     try {
-        // ★APIにも orgId を渡して、そのチームの設定（定休日など）を読み込ませる
         const res = await fetch(`/api/book/slots?hostId=${hostUserId}&date=${selectedDate}&orgId=${orgId}`);
         const data = await res.json();
         
@@ -63,7 +62,6 @@ export default function BookingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // ★重要: チームIDがない場合はエラーにする（不正なURLなど）
     if (!orgId) {
         alert("予約エラー: ワークスペース情報が見つかりません。URLを確認してください。");
         return;
@@ -81,12 +79,13 @@ export default function BookingPage() {
       const startDateTime = `${selectedDate}T${startTimeStr}:00+09:00`;
       const endDateTime = `${selectedDate}T${endTimeStr}:00+09:00`;
 
+      // 1. データベースに保存
       const { error } = await supabase
         .from('booking_requests')
         .insert([
           {
             host_user_id: hostUserId,
-            organization_id: orgId, // ★ここ！これが無いとエラーになります
+            organization_id: orgId,
             guest_name: guestName,
             guest_email: guestEmail,
             start_time: startDateTime,
@@ -97,6 +96,27 @@ export default function BookingPage() {
         ]);
 
       if (error) throw error;
+
+      // ★追加: 2. メール通知を送信 (Resend API)
+      // ※注意: テスト中は to を「あなたのメールアドレス」に設定してください
+      await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            to: 'sutemailadd888@gmail.com', // ←★ここをあなたの受信可能なメールアドレスに書き換えてください！
+            subject: `【予約リクエスト】${guestName}様より`,
+            html: `
+                <h3>新しい予約リクエストが届きました</h3>
+                <p><strong>お名前:</strong> ${guestName}</p>
+                <p><strong>メール:</strong> ${guestEmail}</p>
+                <p><strong>日時:</strong> ${selectedDate} ${selectedTime}</p>
+                <p><strong>メモ:</strong> ${note || 'なし'}</p>
+                <hr/>
+                <p>GAKU-HUB OSのダッシュボードから承認・却下を行ってください。</p>
+            `
+        })
+      });
+
       setStep('done');
 
     } catch (error: any) {

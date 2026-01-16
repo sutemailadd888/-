@@ -49,7 +49,7 @@ export default function RequestInbox({ session, orgId }: Props) {
     try {
       // 1. カレンダーに予定を作成するAPIを呼ぶ
       // (作成処理の中で Google Calendar API を叩く)
-      const res = await fetch('/api/calendar/approve', {
+      const res = await fetch('/api/book/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
