@@ -3,14 +3,14 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Mail, Check, X, Loader2, Calendar, Clock, AlertCircle } from 'lucide-react';
+// ★修正: 使っていないアイコン(X, AlertCircle)を削除
+import { Mail, Check, Loader2, Calendar, Clock } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// ★変更: orgId を受け取る
 interface Props {
   session: any;
   orgId: string;
@@ -18,10 +18,9 @@ interface Props {
 
 export default function RequestInbox({ session, orgId }: Props) {
   const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  // ★修正: 使っていない loading ステートを削除
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  // ★変更: orgId が変わるたびに再読み込み
   useEffect(() => {
     if (session && orgId) {
         fetchRequests();
@@ -29,12 +28,11 @@ export default function RequestInbox({ session, orgId }: Props) {
   }, [session, orgId]);
 
   const fetchRequests = async () => {
-    // ★変更: organization_id でフィルタリングする
     const { data, error } = await supabase
       .from('booking_requests')
       .select('*')
-      .eq('organization_id', orgId) // ここが重要！
-      .eq('status', 'pending') // 未承認のものだけ
+      .eq('organization_id', orgId)
+      .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -47,8 +45,6 @@ export default function RequestInbox({ session, orgId }: Props) {
     setProcessingId(req.id);
     
     try {
-      // 1. カレンダーに予定を作成するAPIを呼ぶ
-      // (作成処理の中で Google Calendar API を叩く)
       const res = await fetch('/api/book/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,7 +57,6 @@ export default function RequestInbox({ session, orgId }: Props) {
       const result = await res.json();
       if (!result.success) throw new Error(result.error);
 
-      // 2. DBのステータスを承認済み(confirmed)にする
       const { error } = await supabase
         .from('booking_requests')
         .update({ status: 'confirmed' })
@@ -70,7 +65,7 @@ export default function RequestInbox({ session, orgId }: Props) {
       if (error) throw error;
 
       alert("✅ 予約を承認し、カレンダーに追加しました！");
-      fetchRequests(); // リスト更新
+      fetchRequests();
 
     } catch (e: any) {
       console.error(e);
@@ -97,7 +92,6 @@ export default function RequestInbox({ session, orgId }: Props) {
     setProcessingId(null);
   };
 
-  // リクエストが0件の場合は何も表示しない
   if (requests.length === 0) return null;
 
   return (
@@ -114,7 +108,6 @@ export default function RequestInbox({ session, orgId }: Props) {
         {requests.map((req) => (
             <div key={req.id} className="border border-gray-200 rounded-lg p-4 flex flex-col md:flex-row gap-4 items-start md:items-center bg-gray-50">
                 
-                {/* 日時と内容 */}
                 <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                         <span className="bg-white border border-gray-300 text-gray-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
@@ -139,7 +132,6 @@ export default function RequestInbox({ session, orgId }: Props) {
                     </div>
                 </div>
 
-                {/* アクションボタン */}
                 <div className="flex items-center gap-2 w-full md:w-auto">
                     <button 
                         onClick={() => handleReject(req.id)}

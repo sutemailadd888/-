@@ -3,17 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// ★修正: 後ろに ! をつけて「必ず値がある」と明示する (Typeエラー回避)
+const resend = new Resend(process.env.RESEND_API_KEY!);
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { request: bookingReq } = body; // request は予約データ
+    const { request: bookingReq } = body; 
 
     if (!bookingReq) return NextResponse.json({ error: 'Missing request data' }, { status: 400 });
 
-    // 1. ホストのGoogleトークンをDBから取得する
-    // (セッション切れ対策のため、DBの user_secrets から取ります)
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -29,7 +28,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Host token not found' }, { status: 401 });
     }
 
-    // 2. Googleカレンダーに予定を作成
     const calendarEvent = {
         summary: `面談: ${bookingReq.guest_name} 様`,
         description: `GAKU-HUB予約\nEmail: ${bookingReq.guest_email}\nNote: ${bookingReq.note || 'なし'}`,
@@ -56,12 +54,12 @@ export async function POST(request: Request) {
         throw new Error('Googleカレンダーへの登録に失敗しました');
     }
 
-    // 3. 承認メールを送信 (Resend)
     try {
         await resend.emails.send({
-            from: 'GAKU-HUB OS <onboarding@resend.dev>', // テスト用送信元
-            to: bookingReq.guest_email, // 本番はこれ (ただしResend無料版は自分のメアドのみ許可)
-            // テスト時はここを ['your-email@example.com'] に書き換えてください！
+            from: 'GAKU-HUB OS <onboarding@resend.dev>',
+            // ★注意: Resend無料版は、ここで指定できるのは「自分の登録メアド」だけです。
+            // テスト時は bookingReq.guest_email ではなく、あなたのメールアドレスに固定することをお勧めします。
+            to: bookingReq.guest_email, 
             subject: '【予約確定】面談の日程が決まりました',
             html: `
                 <p>${bookingReq.guest_name} 様</p>
@@ -75,7 +73,6 @@ export async function POST(request: Request) {
         });
     } catch (emailError) {
         console.error("Mail Error:", emailError);
-        // メール失敗でも処理は止めない
     }
 
     return NextResponse.json({ success: true });
