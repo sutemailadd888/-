@@ -54,11 +54,29 @@ export default function Home() {
     });
   };
 
+  // app/page.tsx の中にある handleLogout をこれに書き換え
+
   const handleLogout = async () => {
     if (!confirm('ログアウトしますか？')) return;
-    localStorage.clear();
-    await supabase.auth.signOut();
-    window.location.href = "/"; // 強制リロード
+    
+    // 1. ローディング状態にする（ボタン連打防止）
+    setLoading(true);
+
+    try {
+        // 2. Supabaseからログアウト
+        await supabase.auth.signOut();
+        
+        // 3. ローカルストレージ（開いていたタブの記憶など）を消す
+        localStorage.clear();
+
+        // 4. セッションを空にして、画面をログインモードに切り替える
+        setSession(null);
+    } catch (error) {
+        console.error("Logout error:", error);
+    } finally {
+        // 5. 最後にローディングを解除（これでログイン画面が表示されます）
+        setLoading(false);
+    }
   };
 
   // モバイルメニューを閉じる処理（タブ切り替え時など）
