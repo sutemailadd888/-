@@ -1,27 +1,20 @@
 // app/layout.tsx
-import type { Metadata, Viewport } from "next"; // ★ Viewportを追加
-import { Inter } from "next/font/google";
+import type { Metadata } from "next";
+// ★変更: Google Fonts から Inter と Noto Sans JP を読み込む
+import { Inter, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const notoSansJP = Noto_Sans_JP({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"], // 必要な太さを指定
+  variable: "--font-noto-sans-jp",
+  preload: false,
+});
 
 export const metadata: Metadata = {
-  title: "Smart Scheduler",
-  description: "AI日程調整アシスタント",
-  // ★以下を追加（iPhone用）
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "Scheduler",
-  },
-};
-
-// ★以下を追加（スマホでズームしすぎない設定など）
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  themeColor: "#9333ea",
+  title: "GAKU-HUB OS",
+  description: "Workspace & Booking Management",
 };
 
 export default function RootLayout({
@@ -31,7 +24,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className={inter.className}>{children}</body>
+      {/* ★変更: bodyにフォントクラスを適用 */}
+      <body className={`${inter.variable} ${notoSansJP.variable} font-sans bg-gray-50 text-gray-900`}>
+        {children}
+      </body>
     </html>
   );
 }
