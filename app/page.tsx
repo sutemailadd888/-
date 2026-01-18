@@ -15,6 +15,8 @@ import TokenSyncer from './components/TokenSyncer';
 import RequestInbox from './components/RequestInbox';
 import ScheduleSettings from './components/ScheduleSettings';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher';
+// ★インポートはOKです
+import { ensurePersonalWorkspace, getMyWorkspaces } from '@/utils/workspace';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -34,13 +36,42 @@ export default function Home() {
     const checkSession = async () => {
         const { data: { session } } = await supabase.auth.getSession();
         setSession(session);
+        
+        // ★追加: セッションがあれば、個人用ワークスペースを確保(作成)し、初期表示する
+        if (session) {
+          try {
+            // 1. なければ作る（あればそのIDが返る）
+            await ensurePersonalWorkspace();
+            
+            // 2. ワークスペース一覧を取得
+            const workspaces = await getMyWorkspaces();
+            
+            // 3. 最初の一つ（通常はPersonal）を選択状態にする
+            if (workspaces && workspaces.length > 0) {
+              setCurrentOrg(workspaces[0]);
+            }
+          } catch (error) {
+            console.error('Workspace init error:', error);
+          }
+        }
+
         setLoading(false);
     };
     checkSession();
 
     // ログイン状態の監視
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
+      
+      // ★追加: ログイン直後のイベントでも同様にワークスペースをロード
+      if (session) {
+          await ensurePersonalWorkspace();
+          const workspaces = await getMyWorkspaces();
+          if (workspaces && workspaces.length > 0) {
+            setCurrentOrg(workspaces[0]);
+          }
+      }
+      
       setLoading(false);
     });
 
