@@ -1,121 +1,119 @@
-import { createClient } from '@supabase/supabase-js';
+import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
+import { createClient } from '../../../../utils/supabase/server';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const hostId = searchParams.get('hostId');
-  const date = searchParams.get('date');
-  const orgId = searchParams.get('orgId');
+  const userId = searchParams.get('userId');
+  const date = searchParams.get('date'); // YYYY-MM-DD
 
-  if (!hostId || !date) return NextResponse.json({ error: 'パラメータ不足' }, { status: 400 });
+  if (!userId || !date) {
+    return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
+  }
 
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey!);
+  // 1. Supabaseからユーザーのトークンを取得
+  const supabase = await createClient();
+  const { data: userToken, error: tokenError } = await supabase
+    .from('user_tokens')
+    .select('access_token, refresh_token, expires_at')
+    .eq('user_id', userId)
+    .single();
+
+  if (tokenError || !userToken) {
+    return NextResponse.json({ error: 'User token not found' }, { status: 401 });
+  }
+
+  // 2. Google OAuthクライアントの設定
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET
+  );
+  
+  oauth2Client.setCredentials({
+    access_token: userToken.access_token,
+    refresh_token: userToken.refresh_token,
+    expiry_date: userToken.expires_at ? Number(userToken.expires_at) : undefined,
+  });
+
+  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+  // 3. 検索範囲の設定（指定された日の 09:00 〜 22:00）
+  // ※ここで時間を変えれば、受付可能時間を変更できます
+  const timeMin = new Date(`${date}T09:00:00+09:00`).toISOString();
+  const timeMax = new Date(`${date}T22:00:00+09:00`).toISOString();
 
   try {
-    // 1. トークン取得
-    const { data: secrets } = await supabaseAdmin
-      .from('user_secrets')
-      .select('access_token')
-      .eq('user_id', hostId)
-      .single();
-
-    if (!secrets?.access_token) return NextResponse.json({ error: 'Token not found' }, { status: 404 });
-
-    // 2. ワークスペース設定取得
-    let settingsQuery = supabaseAdmin.from('schedule_settings').select('weekly_config').eq('user_id', hostId);
-    if (orgId) settingsQuery = settingsQuery.eq('organization_id', orgId);
-    
-    const { data: settingsData } = await settingsQuery.maybeSingle();
-    const settings = settingsData?.weekly_config;
-
-    // 3. 営業時間の判定
-    const dayIndex = new Date(date).getDay(); 
-    const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const todayKey = dayKeys[dayIndex];
-    const dayConfig = settings ? settings[todayKey] : { active: true, start: '10:00', end: '18:00' };
-
-    if (!dayConfig || !dayConfig.active) {
-        return NextResponse.json({ slots: [] });
-    }
-
-    // 4. 【変更点】チェックすべきカレンダーIDを全取得
-    // まず、このアカウントが見れるカレンダーリストを取得する
-    const calendarListRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
-        headers: { 'Authorization': `Bearer ${secrets.access_token}` }
-    });
-    
-    let calendarIds = [{ id: 'primary' }]; // 最低でもメインは見る
-    
-    if (calendarListRes.ok) {
-        const listData = await calendarListRes.json();
-        // 「選択されている(selected)」かつ「書き込み権限がない(shared)」カレンダーなども含める
-        // ※ここではシンプルに「一覧にあるカレンダーすべて」をチェック対象にします
-        if (listData.items) {
-            calendarIds = listData.items.map((cal: any) => ({ id: cal.id }));
-        }
-    }
-
-    // 5. Googleカレンダーに問い合わせ (複数のカレンダーIDを投げる)
-    const timeMin = `${date}T00:00:00+09:00`;
-    const timeMax = `${date}T23:59:59+09:00`;
-
-    const googleRes = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${secrets.access_token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            timeMin, 
-            timeMax, 
-            timeZone: 'Asia/Tokyo', 
-            items: calendarIds // ★ここで全カレンダーを渡す
-        })
+    // ★ここがポイント：編集権限を持つ全カレンダーリストを取得
+    // (仕事用カレンダー + 共有された個人用カレンダーなど)
+    const calendarListRes = await calendar.calendarList.list({
+      minAccessRole: 'writer', // 編集権限があるものだけ（祝日カレンダーなどを除外）
     });
 
-    if (!googleRes.ok) {
-        console.error("Google API Error:", await googleRes.text());
-        return NextResponse.json({ error: 'Google Calendar Error' }, { status: 500 });
-    }
-    
-    const googleData = await googleRes.json();
-    
-    // 6. 全カレンダーの「予定あり(busy)」を合体させる
-    // googleData.calendars は { "primary": { busy: [...] }, "private@gmail...": { busy: [...] } } のようになっている
-    let allBusyRanges: any[] = [];
-    Object.values(googleData.calendars).forEach((cal: any) => {
-        if (cal.busy && cal.busy.length > 0) {
-            allBusyRanges = [...allBusyRanges, ...cal.busy];
-        }
+    const calendarItems = calendarListRes.data.items || [];
+    const calendarIds = calendarItems.map(cal => ({ id: cal.id }));
+
+    // 4. 全カレンダーの空き状況（FreeBusy）を一括取得
+    const freeBusyRes = await calendar.freebusy.query({
+      requestBody: {
+        timeMin,
+        timeMax,
+        timeZone: 'Asia/Tokyo',
+        items: calendarIds, // 取得した全IDを対象にする
+      },
     });
 
-    // 7. 空き枠計算
-    const startHour = parseInt(dayConfig.start.split(':')[0]);
-    const endHour = parseInt(dayConfig.end.split(':')[0]);
-    const availableSlots = [];
+    const calendars = freeBusyRes.data.calendars || {};
+    let busySlots: { start: string; end: string }[] = [];
 
-    for (let h = startHour; h < endHour; h++) {
-        const hourStr = h.toString().padStart(2, '0');
-        const slotStart = new Date(`${date}T${hourStr}:00:00+09:00`);
-        const slotEnd = new Date(`${date}T${h + 1}:00:00+09:00`);
+    // すべてのカレンダーの「予定あり(busy)」情報をひとまとめにする
+    Object.values(calendars).forEach((cal: any) => {
+      if (cal.busy) {
+        busySlots = [...busySlots, ...cal.busy];
+      }
+    });
 
-        // いずれかのカレンダーの予定と被っていたらNG
-        const conflict = allBusyRanges.find((range: any) => {
-            const rangeStart = new Date(range.start);
-            const rangeEnd = new Date(range.end);
-            return slotStart < rangeEnd && slotEnd > rangeStart;
+    // 5. 30分ごとのスロットを生成し、Busyと比較して空き枠を作る
+    const slots = [];
+    const startHour = 9; // 開始時間
+    const endHour = 22;  // 終了時間
+    const slotDuration = 60; // 1枠60分（必要に応じて30や90に変更可）
+
+    // 指定日の開始時刻をセット
+    let current = new Date(`${date}T${String(startHour).padStart(2, '0')}:00:00+09:00`);
+    const endTime = new Date(`${date}T${String(endHour).padStart(2, '0')}:00:00+09:00`);
+
+    while (current < endTime) {
+      // スロットの終了時刻
+      const slotEnd = new Date(current.getTime() + slotDuration * 60000);
+      
+      // このスロットが、取得した「予定あり」と被っていないかチェック
+      const isBusy = busySlots.some(busy => {
+        const busyStart = new Date(busy.start);
+        const busyEnd = new Date(busy.end);
+        
+        // 重なり判定（スロットの一部でも予定と被ればNG）
+        return (current < busyEnd && slotEnd > busyStart);
+      });
+
+      if (!isBusy) {
+        // 時間を "HH:mm" 形式に整形
+        const timeString = current.toLocaleTimeString('ja-JP', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Asia/Tokyo'
         });
+        slots.push(timeString);
+      }
 
-        if (!conflict) {
-            availableSlots.push(`${hourStr}:00`);
-        }
+      // 次の枠へ（30分刻みで開始時間をずらす）
+      // ※60分枠を、30分間隔で提示したい場合はここを30にする
+      current = new Date(current.getTime() + 30 * 60000);
     }
 
-    return NextResponse.json({ slots: availableSlots });
+    return NextResponse.json({ slots });
 
-  } catch (error: any) {
-    console.error("🚨 Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    console.error('Calendar API Error:', error);
+    return NextResponse.json({ error: 'Failed to fetch slots' }, { status: 500 });
   }
 }
