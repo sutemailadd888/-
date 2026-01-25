@@ -29,7 +29,7 @@ export default function MeetingCard({ session, orgId }: Props) {
       // 1. まずセッションのトークンを試す
       let token = session?.provider_token;
 
-      // 2. なければDB (user_secrets) からの取得を試みる
+      // 2. なければDB (user_tokens) からの取得を試みる
       if (!token) {
         console.log("Session token missing. Fetching from DB...");
         const supabase = createClient(
@@ -37,7 +37,7 @@ export default function MeetingCard({ session, orgId }: Props) {
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         );
         const { data } = await supabase
-            .from('user_secrets')
+            .from('user_tokens')
             .select('access_token')
             .eq('user_id', session?.user?.id)
             .single();
