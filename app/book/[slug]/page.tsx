@@ -3,18 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Mail, MessageSquare, CheckCircle2, Loader2, ChevronLeft, ArrowRight } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
-// 匿名ユーザーとして書き込むためのクライアント
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function BookingPage() {
   const params = useParams();
-  const searchParams = useSearchParams();
-  const hostUserId = params.userId as string;
-  const orgId = searchParams.get('orgId');
+  const slug = params.slug as string; // ★変更: hostIdではなくslugを使う
 
   // 画面遷移の状態管理
   const [step, setStep] = useState<'date' | 'form' | 'done'>('date');
@@ -26,12 +24,33 @@ export default function BookingPage() {
   const [guestEmail, setGuestEmail] = useState('');
   const [note, setNote] = useState('');
 
-  // ローディング状態
+  // データ状態
+  const [menuInfo, setMenuInfo] = useState<any>(null); // ★追加: メニュー情報
+  const [loadingMenu, setLoadingMenu] = useState(true);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
 
-  // 日付が選ばれたら、空き時間をAPIから取得する
+  // 1. 初回ロード時にメニュー情報(タイトルや時間)を取得
+  useEffect(() => {
+    const fetchMenu = async () => {
+        const { data, error } = await supabase
+            .from('meeting_types')
+            .select('*')
+            .eq('slug', slug)
+            .single();
+        
+        if (data) {
+            setMenuInfo(data);
+        } else {
+            alert('予約メニューが見つかりません');
+        }
+        setLoadingMenu(false);
+    };
+    fetchMenu();
+  }, [slug]);
+
+  // 2. 日付が選ばれたら、空き時間をAPIから取得
   useEffect(() => {
     if (selectedDate && step === 'date') {
         fetchSlots();
@@ -44,7 +63,8 @@ export default function BookingPage() {
     setSelectedTime('');
 
     try {
-        const res = await fetch(`/api/book/slots?hostId=${hostUserId}&date=${selectedDate}&orgId=${orgId}`);
+        // ★変更: slugを渡して空き時間を計算させる
+        const res = await fetch(`/api/book/slots?slug=${slug}&date=${selectedDate}`);
         const data = await res.json();
         
         if (data.slots) {
@@ -60,58 +80,25 @@ export default function BookingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!orgId) {
-        alert("予約エラー: ワークスペース情報が見つかりません。");
-        return;
-    }
-    
     setLoadingSubmit(true);
 
     try {
-      const startHour = parseInt(selectedTime.split(':')[0]);
-      const endHour = startHour + 1;
-      const startTimeStr = selectedTime.padStart(5, '0');
-      const endTimeStr = endHour.toString().padStart(2, '0') + ':00';
-      const startDateTime = `${selectedDate}T${startTimeStr}:00+09:00`;
-      const endDateTime = `${selectedDate}T${endTimeStr}:00+09:00`;
-
-      // 1. データベースに保存
-      const { error } = await supabase
-        .from('booking_requests')
-        .insert([
-          {
-            host_user_id: hostUserId,
-            workspace_id: orgId,
-            guest_name: guestName,
-            guest_email: guestEmail,
-            start_time: startDateTime,
-            end_time: endDateTime,
-            note: note,
-            status: 'pending'
-          }
-        ]);
-
-      if (error) throw error;
-
-      // 2. メール通知 (本番用設定)
-      await fetch('/api/email/send', {
+      // ★変更: Step 1で作ったAPI経由で送信する
+      const res = await fetch('/api/book/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            // (noreply@gaku-hub.com や booking@gaku-hub.com など、好きな名前でOKです)
-            from: 'GAKU-HUB OS <noreply@gaku-hub.com>', 
-            
-            to: 'sutemailadd888@gmail.com', 
-            subject: `【予約リクエスト】${guestName}様より`,
-            html: `
-                <h3>新しい予約リクエストが届きました</h3>
-                <p><strong>お名前:</strong> ${guestName}</p>
-                <p><strong>メール:</strong> ${guestEmail}</p>
-                <p><strong>日時:</strong> ${selectedDate} ${selectedTime}</p>
-                <p><strong>メモ:</strong> ${note || 'なし'}</p>
-            `
+            slug: slug,
+            date: selectedDate,
+            time: selectedTime,
+            guest_name: guestName,
+            guest_email: guestEmail,
+            note: note
         })
       });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '予約に失敗しました');
 
       setStep('done');
 
@@ -122,6 +109,8 @@ export default function BookingPage() {
       setLoadingSubmit(false);
     }
   };
+
+  if (loadingMenu) return <div className="min-h-screen flex items-center justify-center text-gray-400"><Loader2 className="animate-spin"/></div>;
 
   // --- 完了画面 ---
   if (step === 'done') {
@@ -149,9 +138,8 @@ export default function BookingPage() {
     <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center p-4 font-sans text-gray-900">
       <div className="bg-white max-w-5xl w-full rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row min-h-[600px] border border-gray-100">
         
-        {/* 左側: ブランドエリア (グラデーション背景) */}
+        {/* 左側: ブランドエリア (DBから取得したタイトルを表示) */}
         <div className="md:w-5/12 bg-gradient-to-br from-purple-700 via-purple-600 to-indigo-700 p-10 text-white flex flex-col justify-between relative overflow-hidden">
-          {/* 装飾サークル */}
           <div className="absolute top-[-20%] left-[-20%] w-64 h-64 bg-white opacity-10 rounded-full blur-3xl"></div>
           <div className="absolute bottom-[-10%] right-[-10%] w-80 h-80 bg-indigo-500 opacity-20 rounded-full blur-3xl"></div>
 
@@ -160,12 +148,10 @@ export default function BookingPage() {
               GAKU-HUB Booking
             </div>
             <h1 className="text-3xl font-bold mb-4 leading-tight">
-              Online<br/>Meeting
+              {menuInfo?.title || 'Online Meeting'}
             </h1>
             <p className="text-purple-100 text-sm opacity-90 leading-relaxed font-medium">
-              ご都合の良い日時を選択してください。<br/>
-              カレンダーと連携して、<br/>
-              最適な時間を提案します。
+              {menuInfo?.description || 'ご都合の良い日時を選択してください。カレンダーと連携して、最適な時間を提案します。'}
             </p>
           </div>
 
@@ -174,7 +160,7 @@ export default function BookingPage() {
               <div className="p-2 bg-white/10 rounded-lg">
                 <Clock size={18}/>
               </div>
-              <span>所要時間: 60分</span>
+              <span>所要時間: {menuInfo?.duration_minutes || 60}分</span>
             </div>
             <div className="flex items-center gap-3 text-sm font-medium">
               <div className="p-2 bg-white/10 rounded-lg">
@@ -185,7 +171,7 @@ export default function BookingPage() {
           </div>
         </div>
 
-        {/* 右側: 入力フォームエリア */}
+        {/* 右側: 入力フォームエリア (変更なし) */}
         <div className="md:w-7/12 p-8 md:p-12 bg-white relative">
             
           {/* Step 1: 日時選択 */}
